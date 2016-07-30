@@ -12,24 +12,29 @@
 @interface WSSecondTableController ()
 
 {
+    // 是否正在编辑状态
     BOOL isEditing;
+    // 当前正在编辑的行
+    NSIndexPath *editingIndexPath;
 }
-// 如果既有成员变量，又有属性，那么属性写在成员变量后面，否则报错
+/*如果既有成员变量，又有属性，那么属性写在成员变量后面，否则报错*/
+// cell内容
 @property(nonatomic,strong) NSMutableArray<NSString *> *contentTexts;
+// 临时文本框
 @property(nonatomic,strong) UITextView *textView;
 
 @end
 
 @implementation WSSecondTableController
 
-
+static NSString * const identifier = @"enableEditCell";
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
+
     self.tableView.backgroundColor = [UIColor blackColor];
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     
-    [self.tableView registerNib:[UINib nibWithNibName:NSStringFromClass([WSEnableEditCell class]) bundle:nil] forCellReuseIdentifier:@"enableEditCell"];
+    [self.tableView registerNib:[UINib nibWithNibName:NSStringFromClass([WSEnableEditCell class]) bundle:nil] forCellReuseIdentifier:identifier];
     
     // self-sizing
     self.tableView.estimatedRowHeight = 200.f;
@@ -53,7 +58,7 @@
 
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    WSEnableEditCell *cell = [tableView dequeueReusableCellWithIdentifier:@"enableEditCell"];
+    WSEnableEditCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
     
     [cell setContent:self.contentTexts[indexPath.row]];
     cell.selected = NO;
@@ -62,46 +67,49 @@
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     NSLog(@"选中:%ld行",indexPath.row);
+    // 0.0. 如果，当前正处在编辑状态，那么再次点击cell就保存内容、结束编辑（退出键盘）
+    //      否则，进入编辑状态
+    if ([self endEditForIndexPath:indexPath]) return;
     
-    // 1. 获取点击的那一行在view上的frame
+    // 0.1. 保存点击的那一行
+    editingIndexPath = indexPath;
+    // 1.1. 获取点击的那一行在view上的frame
     CGRect rectInView = [self getCellRectInView:self.view forIndexPath:indexPath];
-    // 2. 根据frame获取cell
+    // 1.2. 根据frame获取cell
     WSEnableEditCell *cell = [self getCellInTableView:tableView ForRect:rectInView];
-    // 3. 键盘弹出时，再点击cell退出编辑（退出键盘）
-    [self endEditForIndexPath:indexPath];
-    // 4. 把textView添加到cell上
+    // 1.3. 把textView添加到cell上
     [self addTextView:self.textView toCell:cell];
     
     return;
-    // 1.获取cell 在 屏幕上的 frame
-     CGRect rectInTableView = [tableView rectForRowAtIndexPath:indexPath];
-     CGRect rect = [tableView convertRect:rectInTableView toView:self.view];
-    
-    // 2.获取显示的所有cell
-    NSArray *visibleCells = [tableView visibleCells];
-    // 3.遍历数组中每个cell的frame
-    for (WSEnableEditCell *cell in visibleCells) {
-        CGRect frame = [tableView convertRect:cell.frame toView:self.view];
-        // 4.通过比较rect找到那个cell
-        if (CGRectEqualToRect(frame, rect)) {
-            // 5.拿到cell的label的frame
-            CGRect labelFrame = cell.ContentLabel.frame;
-            // 6.创建UITextView 尺寸 == frame 为了遮盖住label
-            UITextView *tView = [[UITextView alloc] initWithFrame:labelFrame];
-            // 7.设置UITextView属性
-            tView.backgroundColor = [UIColor lightGrayColor];
-            tView.layer.masksToBounds = YES;
-            tView.layer.cornerRadius = 5.f;
-            // 8.设置UITextView的text
-            tView.text = cell.ContentLabel.text;
-            // 9.UITextView放到cell上
-            [cell.contentView addSubview:tView];
-            // 10.唤出键盘
-            [tView becomeFirstResponder];
-            // 11.tableView不可滚动
-            [tableView setScrollEnabled:NO];
-        }
-    }
+//    // 1.获取cell 在 屏幕上的 frame
+//     CGRect rectInTableView = [tableView rectForRowAtIndexPath:indexPath];
+//     CGRect rect = [tableView convertRect:rectInTableView toView:self.view];
+//    
+//    // 2.获取显示的所有cell
+//    NSArray *visibleCells = [tableView visibleCells];
+//    // 3.遍历数组中每个cell的frame
+//    for (WSEnableEditCell *cell in visibleCells) {
+//        CGRect frame = [tableView convertRect:cell.frame toView:self.view];
+//        // 4.通过比较rect找到那个cell
+//        if (CGRectEqualToRect(frame, rect)) {
+//            // 5.拿到cell的label的frame
+//            CGRect labelFrame = cell.ContentLabel.frame;
+//            // 6.创建UITextView 尺寸 == frame 为了遮盖住label
+//            UITextView *tView = [[UITextView alloc] initWithFrame:labelFrame];
+//            // 7.设置UITextView属性
+//            tView.backgroundColor = [UIColor lightGrayColor];
+//            tView.layer.masksToBounds = YES;
+//            tView.layer.cornerRadius = 5.f;
+//            // 8.设置UITextView的text
+//            tView.text = cell.ContentLabel.text;
+//            // 9.UITextView放到cell上
+//            [cell.contentView addSubview:tView];
+//            // 10.唤出键盘
+//            [tView becomeFirstResponder];
+//            // 11.tableView不可滚动
+//            [tableView setScrollEnabled:NO];
+//        }
+//    }
 }
 
 // 1.获取cell 在 屏幕上的 frame
@@ -123,20 +131,25 @@
     return nil;
 }
 
-- (void)endEditForIndexPath:(NSIndexPath *)indexPath {
+- (BOOL)endEditForIndexPath:(NSIndexPath *)indexPath {
     
     isEditing = !isEditing;
     if (!isEditing) {
+        
+        if (![indexPath isEqual:editingIndexPath]) indexPath = editingIndexPath;
+        
         [self.view endEditing:YES];
         [self.tableView setScrollEnabled:YES];
         self.contentTexts[indexPath.row] = self.textView.text;
         // [cell setContent:self.textView.text];
-        [self.textView removeFromSuperview];
         [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+        [self.textView removeFromSuperview];
+        
         [self.tableView setScrollEnabled:YES];
-        return;
+        return YES;
     } else {
         [self.tableView setScrollEnabled:NO];
+        return NO;
     }
 }
 
